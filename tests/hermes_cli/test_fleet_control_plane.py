@@ -126,6 +126,11 @@ def test_task_contract_immutable_status_creation_constraints(monkeypatch, tmp_pa
         blocked = kb.get_task(conn, blocked_id)
         assert blocked is not None
         assert blocked.status == "blocked"
+        # Documented limitation: creation-time `initial_status=blocked`
+        # is not sticky against `recompute_ready()` unless an explicit
+        # `kanban_block` event exists.  That event can only be emitted
+        # from running/ready, so a true non-destructive simulation gate
+        # would require a new terminal status/event path.
         kb.recompute_ready(conn)
         after = kb.get_task(conn, blocked_id)
         assert after is not None
