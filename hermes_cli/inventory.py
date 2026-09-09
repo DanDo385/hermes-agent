@@ -613,6 +613,9 @@ def _append_unconfigured_rows(
     from hermes_cli.auth import PROVIDER_REGISTRY
     from hermes_cli.models import CANONICAL_PROVIDERS, _PROVIDER_LABELS
 
+    # Normalize excluded_providers once for the loop
+    excluded = {str(p).strip().lower() for p in (ctx.excluded_providers or []) if p}
+
     seen = {r["slug"].lower() for r in rows}
     cur = (ctx.current_provider or "").lower()
     cur_model = str(ctx.current_model or "").strip()
@@ -621,6 +624,9 @@ def _append_unconfigured_rows(
         if entry.slug.lower() in seen:
             continue
         if current_only and entry.slug.lower() != cur:
+            continue
+        # Skip excluded providers (but keep the current provider for re-auth affordance)
+        if entry.slug.lower() != cur and entry.slug.lower() in excluded:
             continue
         if entry.slug.lower() == cur:
             cfg = PROVIDER_REGISTRY.get(entry.slug)
@@ -993,6 +999,12 @@ def _moa_provider_row(current_provider: str = "") -> dict | None:
     picker path (:func:`hermes_cli.model_switch.list_picker_providers`) so the
     row shape stays in one place. Returns ``None`` when no MoA presets exist.
     """
+    # MoA is strictly opt-in: only surface the row when the user's raw config
+    # explicitly enables at least one MoA preset. The synthesized default preset
+    # from DEFAULT_CONFIG must not be treated as a user choice.
+    if not _raw_config_has_enabled_moa_preset():
+        return None
+
     try:
         from hermes_cli.config import load_config
         from hermes_cli.moa_config import normalize_moa_config
