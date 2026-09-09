@@ -1167,6 +1167,41 @@ def _validate_web_backends(config: Dict[str, Any], issues: List[ConfigIssue]) ->
                    "Run 'hermes tools' and pick a different Web Search & Extract provider")
 
 
+def _validate_model_catalog(config: Dict[str, Any], issues: List[ConfigIssue]) -> None:
+    """An unknown slug in ``model_catalog.excluded_providers`` silently hides nothing — the user
+    believes a provider is gone while every picker still lists it. Warn at startup with the closest
+    real provider name (the same class of silent-misconfig bug as ``_validate_web_backends``)."""
+    mc = config.get("model_catalog")
+    if not isinstance(mc, dict) or "excluded_providers" not in mc:
+        return
+    excluded = mc.get("excluded_providers")
+    if not isinstance(excluded, list):
+        if excluded is not None:
+            _issue(issues, "warning",
+                   f"model_catalog.excluded_providers should be a YAML list, got {type(excluded).__name__}",
+                   "Change to:\n  model_catalog:\n    excluded_providers:\n      - anthropic\n      - xai")
+        return
+    try:
+        from hermes_cli.models_catalog_static import (
+            CANONICAL_PROVIDERS, PROVIDER_GROUPS, _PROVIDER_ALIASES,
+        )
+    except Exception:
+        return
+    known = ({p.slug.lower() for p in CANONICAL_PROVIDERS}
+             | {a.lower() for a in _PROVIDER_ALIASES}
+             | {g.lower() for g in PROVIDER_GROUPS})
+    for raw in excluded:
+        slug = str(raw or "").strip().lower()
+        if not slug or slug in known:
+            continue
+        near = difflib.get_close_matches(slug, sorted(known), n=1)
+        suggestion = f" Did you mean '{near[0]}'?" if near else ""
+        _issue(issues, "warning",
+               f"model_catalog.excluded_providers lists '{raw}', which is not a known provider "
+               f"slug or alias — it hides nothing.{suggestion}",
+               "Run 'hermes model' to see valid provider names, or remove the entry.")
+
+
 def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["ConfigIssue"]:
     """Validate config.yaml structure and return detected issues (accepts a pre-loaded dict).
     Catches common YAML mistakes that otherwise surface as confusing runtime errors."""
@@ -1205,6 +1240,7 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
                    f"Move '{key}' under the appropriate section")
 
     _validate_web_backends(config, issues)
+    _validate_model_catalog(config, issues)
     return issues
 
 

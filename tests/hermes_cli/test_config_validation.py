@@ -141,3 +141,33 @@ class TestUnknownTopLevelKeys:
         assert any("base_url" in i.message for i in misplaced)
         assert any("api_key" in i.message for i in misplaced)
 
+
+class TestModelCatalogExcludedProviders:
+    """model_catalog.excluded_providers entries that match no provider slug/alias silently
+    hide nothing — warn so the user notices the typo."""
+
+    def test_unknown_slug_warns_with_suggestion(self):
+        issues = validate_config_structure({
+            "model_catalog": {"excluded_providers": ["anthopic"]},  # typo for "anthropic"
+        })
+        warns = [i for i in issues if i.severity == "warning" and "excluded_providers" in i.message]
+        assert len(warns) == 1
+        assert "hides nothing" in warns[0].message
+        assert "anthropic" in warns[0].message  # close-match suggestion
+
+    def test_known_slug_and_alias_do_not_warn(self):
+        issues = validate_config_structure({
+            "model_catalog": {"excluded_providers": ["anthropic", "grok", "opencode", "  XAI  "]},
+        })
+        assert not [i for i in issues if "excluded_providers" in i.message]
+
+    def test_non_list_warns(self):
+        issues = validate_config_structure({
+            "model_catalog": {"excluded_providers": "anthropic"},
+        })
+        assert any("should be a YAML list" in i.message for i in issues)
+
+    def test_absent_key_is_silent(self):
+        issues = validate_config_structure({"model_catalog": {"enabled": True}})
+        assert not [i for i in issues if "excluded_providers" in i.message]
+
